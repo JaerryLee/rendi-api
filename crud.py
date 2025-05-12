@@ -1,0 +1,124 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import delete
+from datetime import date
+from models import (
+    User, ProfileInitial,
+    LifestyleAnswer, TraitAnswer,
+    PreferenceAnswer, ValuesAnswer,
+    IntroductionAnswer,
+    Partner, PartnerAnswer
+)
+from schemas import ChoiceAnswerIn, TextAnswerIn, ProfileBasicIn, ProfileExtraIn
+
+# --- 유저 ---
+async def get_user_by_google_id(db: AsyncSession, google_id: str):
+    r = await db.execute(select(User).where(User.google_id == google_id))
+    return r.scalars().first()
+
+async def create_user(db: AsyncSession, google_id, email, name, picture):
+    user = User(google_id=google_id, email=email, name=name, picture=picture)
+    db.add(user)
+    await db.commit(); await db.refresh(user)
+    return user
+
+# --- 프로필 ---
+async def get_profile(db: AsyncSession, user_id: int) -> ProfileInitial | None:
+    r = await db.execute(
+        select(ProfileInitial).where(ProfileInitial.user_id == user_id)
+    )
+    return r.scalars().first()
+
+async def upsert_basic(
+    db: AsyncSession,
+    user_id: int,
+    data: ProfileBasicIn
+) -> ProfileInitial:
+    p = await get_profile(db, user_id)
+    if p:
+        p.name = data.name
+        p.age = data.age
+        p.gender = data.gender
+    else:
+        p = ProfileInitial(
+            user_id=user_id,
+            name=data.name,
+            age=data.age,
+            gender=data.gender
+        )
+        db.add(p)
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+async def upsert_extra(
+    db: AsyncSession,
+    user_id: int,
+    data: ProfileExtraIn
+) -> ProfileInitial:
+    p = await get_profile(db, user_id)
+    # 기본 정보가 반드시 있어야 함
+    p.job     = data.job
+    p.region  = data.region
+    p.mbti    = data.mbti
+    p.smoking = data.smoking
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+# --- 설문 공통 ---
+async def upsert_answers(
+    db: AsyncSession, user_id: int,
+    answers, model_cls, is_text: bool = False
+):
+    await db.execute(delete(model_cls).where(model_cls.user_id == user_id))
+    objs = []
+    if is_text:
+        for ans in answers:
+            objs.append(model_cls(
+                user_id=user_id,
+                question_id=ans.question_id,
+                text=ans.text
+            ))
+    else:
+        for ans in answers:
+            if ans.option_id:
+                objs.append(model_cls(
+                    user_id=user_id,
+                    question_id=ans.question_id,
+                    option_id=ans.option_id
+                ))
+            if ans.option_ids:
+                for oid in ans.option_ids:
+                    objs.append(model_cls(
+                        user_id=user_id,
+                        question_id=ans.question_id,
+                        option_id=oid
+                    ))
+    db.add_all(objs)
+    await db.commit()
+    return len(objs)
+
+# --- 파트너 ---
+async def create_partner_with_answers(
+    db: AsyncSession, user_id: int, meeting_date: date, answers: list[ChoiceAnswerIn]
+):
+    partner = Partner(user_id=user_id, meeting_date=meeting_date)
+    db.add(partner)
+    await db.flush()
+    objs = [
+        PartnerAnswer(
+            partner_id=partner.id,
+            question_id=ans.question_id,
+            option_id=ans.option_id
+        ) for ans in answers
+    ]
+    db.add_all(objs)
+    await db.commit(); await db.refresh(partner)
+    return partner
+
+async def get_latest_partner(db: AsyncSession, user_id: int):
+    r = await db.execute(
+        select(Partner).where(Partner.user_id==user_id).order_by(Partner.id.desc())
+    )
+    return r.scalars().first()
