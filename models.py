@@ -1,5 +1,5 @@
 # models.py
-from sqlalchemy import Column, Integer, String, Boolean, Date, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Date, Text, ForeignKey, Time
 from sqlalchemy.orm import relationship
 from core.database import Base
 
@@ -82,6 +82,8 @@ class Partner(Base):
     id           = Column(Integer, primary_key=True, index=True)
     user_id      = Column(Integer, ForeignKey("users.id"), index=True)
     meeting_date = Column(Date)
+    meeting_time   = Column(Time, nullable=True)       # 새로 추가
+    meeting_place  = Column(String, nullable=True)     # 새로 추가
     answers      = relationship("PartnerAnswer", back_populates="partner", cascade="all,delete-orphan")
 
 
@@ -93,3 +95,18 @@ class PartnerAnswer(Base):
     option_id   = Column(String)
 
     partner = relationship("Partner", back_populates="answers")
+
+class ChecklistItem(Base):
+    __tablename__ = "checklist_items"
+    id    = Column(Integer, primary_key=True, index=True)
+    text  = Column(String, nullable=False)           # 예: "약속 시간, 장소 다시 확인하기"
+
+class UserChecklist(Base):
+    __tablename__ = "user_checklists"
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), index=True)
+    item_id    = Column(Integer, ForeignKey("checklist_items.id"), index=True)
+    date       = Column(Date, index=True)            # 체크를 누른 날짜
+    checked    = Column(Boolean, default=True)       # 체크하면 True, 해제하면 False
+
+    item = relationship("ChecklistItem")

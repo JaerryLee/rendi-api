@@ -9,7 +9,7 @@ from fastapi.openapi.utils import get_openapi
 
 from core.config import settings
 from core.database import engine, Base
-from routers import auth, profile, survey, partner, dashboard
+from routers import auth, profile, survey, partner, dashboard, checklist
 
 app = FastAPI(
     title="Rendi API",
@@ -57,6 +57,7 @@ app.include_router(profile.router)
 app.include_router(survey.router)
 app.include_router(partner.router)
 app.include_router(dashboard.router)
+app.include_router(checklist.router)
 
 def custom_openapi():
     if app.openapi_schema:
@@ -64,7 +65,7 @@ def custom_openapi():
     schema = get_openapi(
         title=app.title,
         version=app.version,
-        description="Rendi Complete API Docs",
+        description="Rendi API Docs",
         routes=app.routes,
     )
     comp = schema.setdefault("components", {})

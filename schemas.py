@@ -1,7 +1,7 @@
 #schemas.py
 from pydantic import BaseModel, RootModel, Field
 from typing import List, Optional
-from datetime import date
+from datetime import date, time
 
 # --- 유저 공통 스키마 ---
 class UserOut(BaseModel):
@@ -146,23 +146,29 @@ class QuestionWithAnswerOut(BaseModel):
 class NewPartnerIn(BaseModel):
     meeting_date: date
     answers: List[ChoiceAnswerIn]
-
-
-class PartnerOut(BaseModel):
-    id: int
+    
+class ScheduleIn(BaseModel):
     meeting_date: date
-
-    model_config = {"from_attributes": True}
-
+    meeting_time: time
+    meeting_place: str
 
 class PartnerAnswerOut(BaseModel):
     question_id: int
     option_id: str
 
+class PartnerOut(BaseModel):
+    id: int
+    meeting_date: date
+    meeting_time: Optional[time]
+    meeting_place: Optional[str]
+
+    model_config = {"from_attributes": True}
 
 class PartnerWithAnswersOut(PartnerOut):
     answers: List[PartnerAnswerOut]
 
+class PartnerListOut(BaseModel):
+    partners: List[PartnerWithAnswersOut]
 
 # --- 대시보드 ---
 class TaskOut(BaseModel):
@@ -181,3 +187,23 @@ class DashboardOut(BaseModel):
     countdown: str
     tasks: List[TaskOut]
     actions: List[ActionOut]
+
+# 체크리스튼튼
+
+class ChecklistItemOut(BaseModel):
+    id: int
+    text: str
+    class Config:
+        from_attributes = True
+
+class UserChecklistStatus(BaseModel):
+    item_id: int
+    checked: bool
+
+class DailyChecklistOut(BaseModel):
+    date: date
+    items: List[UserChecklistStatus]
+
+class ToggleChecklistIn(BaseModel):
+    item_id: int
+    checked: bool
