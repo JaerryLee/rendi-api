@@ -1,4 +1,5 @@
-from pydantic import BaseModel, RootModel
+#schemas.py
+from pydantic import BaseModel, RootModel, Field
 from typing import List, Optional
 from datetime import date
 
@@ -28,16 +29,31 @@ class TokenOut(BaseModel):
 
 
 # --- 프로필 온보딩용 입력 스키마 ---
-class ProfileBasicIn(BaseModel):
+class ProfileIn(BaseModel):
+    # --- 기본 정보 ---
     name: str
     age: int
     gender: str
 
-class ProfileExtraIn(BaseModel):
-    job: Optional[str]
-    region: Optional[str]
-    mbti: Optional[str]
-    smoking: Optional[bool] = False
+    # --- 추가 정보 ---
+    job: Optional[str]            = Field(None, description="직업")
+    region: Optional[str]         = Field(None, description="거주 지역 (선택)")
+    mbti: Optional[str]           = Field(None, description="MBTI (선택)")
+    smoking: bool                 = Field(..., description="흡연 여부 (필수)")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "name": "홍길동",
+                "age": 28,
+                "gender": "male",
+                "job": "Developer",
+                "region": "Seoul",
+                "mbti": "INTJ",
+                "smoking": True
+            }
+        }
+    }
 
 
 # --- DB 모델 리턴용 프로필 아웃풋 ---
@@ -58,27 +74,31 @@ class UserProfileOut(UserOut):
     profile: Optional[ProfileInitialOut]
 
 
-# --- 설문 공통 ---
+# --- 설문 ---
 class OptionOut(BaseModel):
-    id: str
-    text: str
+    label: str
+    value: str
 
     model_config = {"from_attributes": True}
 
 
 class QuestionOut(BaseModel):
     id: int
-    text: str
-    multiple: bool
-    options: List[OptionOut]
+    type: str               # 'select' | 'slider' | 'multiple_choice' | 'group_input'
+    title: str
+    maxChoice: Optional[int]
+    options: Optional[List[OptionOut]]
+    subQuestions: Optional[List[OptionOut]]  # group_input 용
+    minLabel: Optional[str]  # slider 용
+    maxLabel: Optional[str]
+    min: Optional[int]
+    max: Optional[int]
+    step: Optional[int]
 
-    model_config = {"from_attributes": True}
+    model_config = {"populate_by_name": True}
 
 
 class QuestionList(RootModel[List[QuestionOut]]):
-    """
-    선택형 문항 리스트 반환용 루트 모델
-    """
     pass
 
 
@@ -92,34 +112,36 @@ class ChoiceAnswerList(BaseModel):
     answers: List[ChoiceAnswerIn]
 
 
-class TextQuestionOut(BaseModel):
-    id: int
-    prompt: str
-
-    model_config = {"from_attributes": True}
-
-
-class TextQuestionList(RootModel[List[TextQuestionOut]]):
-    """
-    주관식 문항 리스트 반환용 루트 모델
-    """
-    pass
-
-
 class TextAnswerIn(BaseModel):
     question_id: int
     text: str
-
-
-class TextAnswerList(BaseModel):
-    answers: List[TextAnswerIn]
 
 
 class SaveResult(BaseModel):
     status: str
     saved_count: int
 
+class QuestionWithAnswerOut(BaseModel):
+    id: int
+    type: str
+    title: str
+    maxChoice: Optional[int]
+    options: Optional[List[OptionOut]]
+    subQuestions: Optional[List[OptionOut]]
+    minLabel: Optional[str]
+    maxLabel: Optional[str]
+    min: Optional[int]
+    max: Optional[int]
+    step: Optional[int]
 
+    answer_id: Optional[str] = None
+    answer_ids: Optional[List[str]] = None
+    text: Optional[str]       = None           
+
+    model_config = {
+        "from_attributes": True
+    }
+    
 # --- 파트너 ---
 class NewPartnerIn(BaseModel):
     meeting_date: date

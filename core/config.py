@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     DATABASE_URL: AnyUrl
 
-    FRONTEND_URL: AnyHttpUrl
+    FRONTEND_URL: str
     
     class Config:
         env_file = ".env"

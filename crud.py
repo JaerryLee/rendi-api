@@ -9,7 +9,8 @@ from models import (
     IntroductionAnswer,
     Partner, PartnerAnswer
 )
-from schemas import ChoiceAnswerIn, TextAnswerIn, ProfileBasicIn, ProfileExtraIn
+from schemas import ChoiceAnswerIn, TextAnswerIn, ProfileIn  # ProfileBasicIn/ExtraIn → ProfileIn
+from typing import Dict, List
 
 # --- 유저 ---
 async def get_user_by_google_id(db: AsyncSession, google_id: str):
@@ -19,7 +20,8 @@ async def get_user_by_google_id(db: AsyncSession, google_id: str):
 async def create_user(db: AsyncSession, google_id, email, name, picture):
     user = User(google_id=google_id, email=email, name=name, picture=picture)
     db.add(user)
-    await db.commit(); await db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     return user
 
 # --- 프로필 ---
@@ -32,12 +34,12 @@ async def get_profile(db: AsyncSession, user_id: int) -> ProfileInitial | None:
 async def upsert_basic(
     db: AsyncSession,
     user_id: int,
-    data: ProfileBasicIn
+    data: ProfileIn            # ProfileBasicIn → ProfileIn
 ) -> ProfileInitial:
     p = await get_profile(db, user_id)
     if p:
-        p.name = data.name
-        p.age = data.age
+        p.name   = data.name
+        p.age    = data.age
         p.gender = data.gender
     else:
         p = ProfileInitial(
@@ -54,7 +56,7 @@ async def upsert_basic(
 async def upsert_extra(
     db: AsyncSession,
     user_id: int,
-    data: ProfileExtraIn
+    data: ProfileIn            # ProfileExtraIn → ProfileIn
 ) -> ProfileInitial:
     p = await get_profile(db, user_id)
     # 기본 정보가 반드시 있어야 함
@@ -99,6 +101,25 @@ async def upsert_answers(
     await db.commit()
     return len(objs)
 
+async def get_user_answers(
+    db: AsyncSession,
+    user_id: int,
+    model
+) -> Dict[int, List[str]]:
+    """
+    model 테이블에서 user_id 에 대한 question별 option_id(text) 리스트를 반환.
+    """
+    r = await db.execute(
+        select(model).where(model.user_id==user_id)
+    )
+    rows = r.scalars().all()
+    d: Dict[int, List[str]] = {}
+    for row in rows:
+        key = row.question_id
+        val = getattr(row, "option_id", None) or getattr(row, "text", None)
+        d.setdefault(key, []).append(val)
+    return d
+
 # --- 파트너 ---
 async def create_partner_with_answers(
     db: AsyncSession, user_id: int, meeting_date: date, answers: list[ChoiceAnswerIn]
@@ -114,11 +135,14 @@ async def create_partner_with_answers(
         ) for ans in answers
     ]
     db.add_all(objs)
-    await db.commit(); await db.refresh(partner)
+    await db.commit()
+    await db.refresh(partner)
     return partner
 
 async def get_latest_partner(db: AsyncSession, user_id: int):
     r = await db.execute(
-        select(Partner).where(Partner.user_id==user_id).order_by(Partner.id.desc())
+        select(Partner)
+        .where(Partner.user_id == user_id)
+        .order_by(Partner.id.desc())
     )
     return r.scalars().first()

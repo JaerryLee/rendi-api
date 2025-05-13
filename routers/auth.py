@@ -1,17 +1,19 @@
-from fastapi import APIRouter, Request, Response, Depends, status, HTTPException, Cookie
-from fastapi.responses import RedirectResponse
+# app/routers/auth.py
+from fastapi import APIRouter, Request, Depends, status, HTTPException, Cookie
+from fastapi.responses import RedirectResponse, Response
 from authlib.integrations.starlette_client import OAuth
+from authlib.integrations.base_client.errors import MismatchingStateError
 from jose import jwt
 from datetime import datetime, timedelta
 
 from core.config import settings
 from core.database import get_session
-from crud import get_user_by_google_id, create_user
+from crud import get_user_by_google_id, create_user, get_profile
 from schemas import TokenOut
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-# OAuth 클라이언트 등록 (메타데이터 자동 로드, userinfo() 지원)
+# OAuth 클라이언트 등록
 oauth = OAuth()
 oauth.register(
     name="google",
@@ -21,11 +23,17 @@ oauth.register(
     client_kwargs={"scope": "openid email profile"},
 )
 
+# 프론트엔드 URL 설정
+FRONTEND = str(settings.FRONTEND_URL).rstrip("/")
+IS_PROD = FRONTEND.startswith("https://")
+COOKIE_SECURE = IS_PROD
+COOKIE_SAMESITE = "none" if IS_PROD else "lax"
+
+
 @router.get(
     "/google",
-    summary="구글 OAuth 인증",
-    description="프론트에서 이 API(`/auth/google`)로 호출해 주세요.",
-    response_class=RedirectResponse
+    response_class=RedirectResponse,
+    summary="구글 OAuth 인증 시작"
 )
 async def login_google(request: Request):
     return await oauth.google.authorize_redirect(request, settings.GOOGLE_REDIRECT_URI)
@@ -33,23 +41,21 @@ async def login_google(request: Request):
 
 @router.get(
     "/google/callback",
-    summary="구글 OAuth 인증 콜백",
-    description="구글 로그인 후 이 API로 리다이렉트됩니다.",
     response_class=RedirectResponse,
-    status_code=302,
+    summary="구글 OAuth 콜백"
 )
-async def callback(
-    request: Request,
-    # response: Response,
-    db=Depends(get_session)
-):
-    # 토큰 교환
-    token = await oauth.google.authorize_access_token(request)
-    # ⇨ 변경: parse_id_token 대신 userinfo() 사용
-    user_info = await oauth.google.userinfo(token=token)
+async def callback(request: Request, db=Depends(get_session)):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except MismatchingStateError:
+        # state 불일치 시 홈으로 리다이렉트
+        return RedirectResponse(FRONTEND, status_code=302)
 
-    # DB에 사용자 존재 확인 및 저장
+    # 사용자 정보 조회
+    user_info = await oauth.google.userinfo(token=token)
     google_id = user_info["sub"]
+
+    # DB 조회/저장
     user = await get_user_by_google_id(db, google_id)
     if not user:
         user = await create_user(
@@ -60,29 +66,39 @@ async def callback(
             user_info.get("picture", "")
         )
 
-    # JWT 발급
+    # JWT 생성
     expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_jwt = jwt.encode(
-        {"sub": google_id, "exp": expire},
-        settings.SECRET_KEY,
-        algorithm=settings.ALGORITHM
-    )
+    access_jwt = jwt.encode({"sub": google_id, "exp": expire}, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     refresh_jwt = jwt.encode({"sub": google_id}, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-    # 쿠키 세팅 & JSON 반환
-    frontend = settings.FRONTEND_URL  # .env 에 https://www.rendi.online 으로 설정되어 있어야 함
-    response = RedirectResponse(url=frontend, status_code=302)
-    response.set_cookie("access_token", access_jwt, httponly=True, secure=True, samesite="strict")
-    response.set_cookie("refresh_token", refresh_jwt, httponly=True, secure=True, samesite="strict")
+    # 프로필 존재 여부
+    is_new = (await get_profile(db, user.id)) is None
+    next_path = "sign-up" if is_new else ""
+    redirect_url = f"{FRONTEND}/{next_path}" if next_path else FRONTEND
+
+    # 쿠키 설정 후 리다이렉트
+    response = RedirectResponse(url=redirect_url, status_code=302)
+    response.set_cookie(
+        "access_token",
+        access_jwt,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE
+    )
+    response.set_cookie(
+        "refresh_token",
+        refresh_jwt,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE
+    )
     return response
 
 
 @router.post(
     "/logout",
-    summary="로그아웃",
-    description="Access/Refresh 토큰을 삭제합니다.",
     status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response
+    summary="로그아웃"
 )
 async def logout():
     resp = Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -93,13 +109,10 @@ async def logout():
 
 @router.post(
     "/refresh",
-    summary="JWT 토큰 재발급",
-    description="Access 토큰이 만료되면 이 API(`/auth/refresh`)로 재발급 받으세요.",
-    response_model=TokenOut
+    response_model=TokenOut,
+    summary="토큰 재발급"
 )
-async def refresh_token(
-    refresh_token: str = Cookie(None)
-):
+async def refresh_token(refresh_token: str = Cookie(None)):
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token missing")
     try:

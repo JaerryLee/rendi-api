@@ -3,7 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from deps import get_current_user
 from core.database import get_session
 from crud import get_profile, upsert_basic, upsert_extra
-from schemas import ProfileBasicIn, ProfileExtraIn, UserProfileOut
+from schemas import ProfileIn, UserProfileOut
+
 router = APIRouter(prefix="/users/me", tags=["profile"])
 
 @router.get(
@@ -27,59 +28,42 @@ async def read_profile(
         "picture": user.picture,
         "profile": profile,
     }
-
-
+    
 @router.post(
-    "/profile/basic",
+    "/profile",
     response_model=UserProfileOut,
     status_code=status.HTTP_201_CREATED,
-    summary="기본 정보 저장",
+    summary="내 프로필 저장/업데이트"
 )
-async def write_basic_profile(
-    data: ProfileBasicIn,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+async def upsert_profile(
+    data: ProfileIn,
+    user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
     """
-    - 이름/나이/성별 등 기본 정보를 저장합니다.
+    - 이름/나이/성별 등 기본 정보 + 직업/거주지역/MBTI/흡연여부를 한 번에 저장합니다.
+    - region, mbti는 선택, smoking은 필수입니다.
     - 성공 시 전체 유저+프로필을 반환합니다.
     """
-    prof = await upsert_basic(db, user.id, data)
-    return {
-        "id": user.id,
-        "email": user.email,
-        "name": user.name,
-        "picture": user.picture,
-        "profile": prof,
-    }
+    # 1) 기본 정보 저장 (생성 또는 업데이트)
+    await upsert_basic(db, user.id, data)
 
+    # 2) 추가 정보 저장
+    await upsert_extra(db, user.id, data)
 
-@router.post(
-    "/profile/extra",
-    response_model=UserProfileOut,
-    summary="추가 정보 저장",
-)
-async def write_extra_profile(
-    data: ProfileExtraIn,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
-):
-    """
-    - 직업/거주지역/MBTI/흡연여부 등 추가 정보를 저장합니다.
-    - 기본 정보가 아직 없다면 400 에러를 반환합니다.
-    """
-    existing = await get_profile(db, user.id)
-    if existing is None:
+    # 3) 최종 프로필 조회
+    profile = await get_profile(db, user.id)
+    if profile is None:
+        # upsert_basic/extra가 정상이라면 이 케이스는 거의 발생하지 않습니다.
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="먼저 기본 정보를 저장해주세요."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="프로필 저장 후 조회에 실패했습니다."
         )
 
-    prof = await upsert_extra(db, user.id, data)
     return {
         "id": user.id,
         "email": user.email,
         "name": user.name,
         "picture": user.picture,
-        "profile": prof,
+        "profile": profile,
     }

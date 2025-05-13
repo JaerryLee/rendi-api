@@ -1,3 +1,5 @@
 .env
 venv/
 __pycache__/
+uvicorn.log
+__init__.py
