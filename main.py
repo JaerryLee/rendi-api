@@ -20,7 +20,6 @@ app = FastAPI(
     docs_url="/docs",
 )
 
-# 1) SessionMiddleware가 먼저 설정되어야 세션 쿠키를 올바르게 읽고 씁니다.
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
@@ -28,7 +27,6 @@ app.add_middleware(
     https_only=False,
 )
 
-# 2) CORS 미들웨어
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.FRONTEND_URL, "http://localhost:5173"],
@@ -37,15 +35,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 정적 파일 서빙
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# 디버그용 토큰 확인 엔드포인트
 @app.get("/debug/token")
 def debug_token(access_token: str = Cookie(None, alias="access_token")):
     return {"access_token": access_token}
 
-# 로그인 페이지
 @app.get("/", include_in_schema=False)
 async def root():
     return FileResponse("static/login.html")

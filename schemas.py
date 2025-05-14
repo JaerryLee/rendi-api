@@ -1,4 +1,3 @@
-#schemas.py
 from pydantic import BaseModel, RootModel, Field
 from typing import List, Optional, Literal
 from datetime import date, time
@@ -92,7 +91,7 @@ class SubQuestionDef(BaseModel):
 
 class QuestionOut(BaseModel):
     id: int
-    type: str               # 'select' | 'slider' | 'multiple_choice' | 'group_input'
+    type: str               
     title: str
 
     # select / multiple_choice

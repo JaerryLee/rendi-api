@@ -7,7 +7,7 @@ from core.database import get_session
 from crud import get_user_by_google_id
 
 async def get_current_user(
-    access_token: str = Cookie(None),                   # 쿠키 이름을 access_token으로 바로 매핑
+    access_token: str = Cookie(None),
     db: AsyncSession = Depends(get_session)
 ):
     if not access_token:

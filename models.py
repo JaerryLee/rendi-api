@@ -1,4 +1,3 @@
-# models.py
 from sqlalchemy import Column, Integer, String, Boolean, Date, Text, ForeignKey, Time
 from sqlalchemy.orm import relationship
 from core.database import Base
@@ -116,7 +115,7 @@ class PartnerAnswer(Base):
 class ChecklistItem(Base):
     __tablename__ = "checklist_items"
     id    = Column(Integer, primary_key=True, index=True)
-    text  = Column(String, nullable=False)           # 예: "약속 시간, 장소 다시 확인하기"
+    text  = Column(String, nullable=False)           
 
     model_config = {"from_attributes": True}
 
@@ -125,7 +124,7 @@ class UserChecklist(Base):
     id         = Column(Integer, primary_key=True, index=True)
     user_id    = Column(Integer, ForeignKey("users.id"), index=True)
     item_id    = Column(Integer, ForeignKey("checklist_items.id"), index=True)
-    date       = Column(Date, index=True)            # 체크를 누른 날짜
-    checked    = Column(Boolean, default=True)       # 체크하면 True, 해제하면 False
+    date       = Column(Date, index=True)  
+    checked    = Column(Boolean, default=True) 
 
     item = relationship("ChecklistItem")

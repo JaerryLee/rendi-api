@@ -37,7 +37,7 @@ async def get_profile(db: AsyncSession, user_id: int) -> ProfileInitial | None:
 async def upsert_basic(
     db: AsyncSession,
     user_id: int,
-    data: ProfileIn            # ProfileBasicIn → ProfileIn
+    data: ProfileIn            
 ) -> ProfileInitial:
     p = await get_profile(db, user_id)
     if p:
@@ -59,10 +59,9 @@ async def upsert_basic(
 async def upsert_extra(
     db: AsyncSession,
     user_id: int,
-    data: ProfileIn            # ProfileExtraIn → ProfileIn
+    data: ProfileIn            
 ) -> ProfileInitial:
     p = await get_profile(db, user_id)
-    # 기본 정보가 반드시 있어야 함
     p.job     = data.job
     p.region  = data.region
     p.mbti    = data.mbti
@@ -79,7 +78,6 @@ async def upsert_answers(
     model_cls,
     is_text: bool = False
 ) -> int:
-    # 기존 답 삭제
     await db.execute(delete(model_cls).where(model_cls.user_id == user_id))
     objs = []
     if is_text:
@@ -91,7 +89,6 @@ async def upsert_answers(
             ))
     else:
         for a in answers:
-            # 이제 항상 option_ids 리스트
             for oid in a.option_ids:
                 objs.append(model_cls(
                     user_id=user_id,
@@ -157,11 +154,10 @@ async def create_partner_with_answers(
 ) -> Partner:
     partner = Partner(user_id=user_id)
     db.add(partner)
-    await db.flush()  # partner.id 생성
+    await db.flush()
 
     objs = []
     for ans in answers:
-        # 단일/복수 모두 option_ids 로 처리
         ids = ans.option_ids or ([ans.option_id] if ans.option_id else [])
         for oid in ids:
             objs.append(PartnerAnswer(
@@ -179,7 +175,6 @@ async def upsert_partner_answers(
     user_id: int,
     answers: List[ChoiceAnswerIn]
 ) -> Partner:
-    # 최신 파트너 조회
     r = await db.execute(
         select(Partner)
         .where(Partner.user_id == user_id)

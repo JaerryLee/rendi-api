@@ -1,4 +1,3 @@
-# app/routers/auth.py
 from fastapi import APIRouter, Request, Depends, status, HTTPException, Cookie
 from fastapi.responses import RedirectResponse, Response
 from authlib.integrations.starlette_client import OAuth

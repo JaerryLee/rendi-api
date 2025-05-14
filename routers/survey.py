@@ -1,4 +1,3 @@
-# app/routers/survey.py
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
@@ -53,7 +52,7 @@ async def _load_and_merge(
 @router.get(
     "/lifestyle",
     response_model=List[QuestionWithAnswerOut],
-    summary="Get Lifestyle with answers"
+    summary="라이프스타일 설문"
 )
 async def get_lifestyle(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     return await _load_and_merge(db, user.id, 1, 7, LifestyleAnswer)
@@ -62,7 +61,7 @@ async def get_lifestyle(user=Depends(get_current_user), db: AsyncSession = Depen
 @router.post(
     "/lifestyle",
     response_model=SaveResult,
-    summary="Post Lifestyle"
+    summary="라이프스타일 설문"
 )
 async def post_lifestyle(payload: ChoiceAnswerList, user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     cnt = await upsert_answers(db, user.id, payload.answers, LifestyleAnswer, is_text=False)
@@ -72,7 +71,7 @@ async def post_lifestyle(payload: ChoiceAnswerList, user=Depends(get_current_use
 @router.get(
     "/identify",
     response_model=List[QuestionWithAnswerOut],
-    summary="Get Identify with answers"
+    summary="성향파악 설문"
 )
 async def get_identify(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     return await _load_and_merge(db, user.id, 8, 20, TraitAnswer)
@@ -81,7 +80,7 @@ async def get_identify(user=Depends(get_current_user), db: AsyncSession = Depend
 @router.post(
     "/identify",
     response_model=SaveResult,
-    summary="Post Identify"
+    summary="성향파악 설문"
 )
 async def post_identify(payload: ChoiceAnswerList, user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     cnt = await upsert_answers(db, user.id, payload.answers, TraitAnswer, is_text=False)
@@ -91,7 +90,7 @@ async def post_identify(payload: ChoiceAnswerList, user=Depends(get_current_user
 @router.get(
     "/preference",
     response_model=List[QuestionWithAnswerOut],
-    summary="Get Preference with answers"
+    summary="취향파악 설문"
 )
 async def get_preference(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     return await _load_and_merge(db, user.id, 21, 27, PreferenceAnswer)
@@ -100,7 +99,7 @@ async def get_preference(user=Depends(get_current_user), db: AsyncSession = Depe
 @router.post(
     "/preference",
     response_model=SaveResult,
-    summary="Post Preference"
+    summary="취향파악 설문"
 )
 async def post_preference(payload: ChoiceAnswerList, user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     cnt = await upsert_answers(db, user.id, payload.answers, PreferenceAnswer, is_text=False)
@@ -110,7 +109,7 @@ async def post_preference(payload: ChoiceAnswerList, user=Depends(get_current_us
 @router.get(
     "/beliefs",
     response_model=List[QuestionWithAnswerOut],
-    summary="Get Beliefs with answers"
+    summary="가치관파악 설문"
 )
 async def get_beliefs(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     return await _load_and_merge(db, user.id, 28, 33, ValuesAnswer)
@@ -119,7 +118,7 @@ async def get_beliefs(user=Depends(get_current_user), db: AsyncSession = Depends
 @router.post(
     "/beliefs",
     response_model=SaveResult,
-    summary="Post Beliefs"
+    summary="가치관파악 설문"
 )
 async def post_beliefs(payload: ChoiceAnswerList, user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     cnt = await upsert_answers(db, user.id, payload.answers, ValuesAnswer, is_text=False)
@@ -127,7 +126,7 @@ async def post_beliefs(payload: ChoiceAnswerList, user=Depends(get_current_user)
 @router.get(
     "/essay",
     response_model=GroupInputOut,
-    summary="Get Essay(group_input) with answers"
+    summary="주관식 소개"
 )
 async def get_group_input(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     q34 = next(q for q in QUESTION_DEFINITIONS if q["id"] == 34)
@@ -144,7 +143,7 @@ async def get_group_input(user=Depends(get_current_user), db: AsyncSession = Dep
     "/essay",
     response_model=SaveResult,
     status_code=status.HTTP_201_CREATED,
-    summary="Post Essay(group_input) answers"
+    summary="주관식 소개 작성"
 )
 async def post_group_input(payload: GroupInputAnswerList, user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     cnt = await upsert_group_input_answers(db, user.id, payload.answers)

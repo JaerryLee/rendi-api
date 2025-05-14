@@ -1,5 +1,3 @@
-# partner.py
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from deps import get_current_user
@@ -19,20 +17,7 @@ from crud import (
     upsert_partner_answers,
 )
 router = APIRouter(prefix="/partners", tags=["partners"])
-'''
-PARTNER_QUESTIONS = [
-    {
-        "id": 1,,
-        "type": "select",                  # 추가
-        "title": "카카오톡 프로필 분위기",     # text → title
-        "maxChoice": 1,                    # multiple=False → maxChoice=1
-        "options": [
-            {"label": "밝고 유쾌한 느낌(이모지/사진 활용)", "value": "1"},
-            {"label": "깔끔하고 미니멀한 스타일",         "value": "2"},
-            # …
-        ],
-    },
-'''
+
 PARTNER_QUESTIONS = [
     {
         "id": 1,
