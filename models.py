@@ -76,16 +76,33 @@ class IntroductionAnswer(Base):
     question_id = Column(Integer, index=True)
     text        = Column(Text)
 
+class GroupInputAnswer(Base):
+    __tablename__ = "group_input_answers"
+    id              = Column(Integer, primary_key=True, index=True)
+    user_id         = Column(Integer, ForeignKey("users.id"), index=True)
+    question_id     = Column(Integer, index=True, default=34)        
+    sub_question_id = Column(Integer, index=True)                    
+    text            = Column(Text, nullable=True)
 
 class Partner(Base):
     __tablename__ = "partners"
-    id           = Column(Integer, primary_key=True, index=True)
-    user_id      = Column(Integer, ForeignKey("users.id"), index=True)
-    meeting_date = Column(Date)
-    meeting_time   = Column(Time, nullable=True)       # 새로 추가
-    meeting_place  = Column(String, nullable=True)     # 새로 추가
-    answers      = relationship("PartnerAnswer", back_populates="partner", cascade="all,delete-orphan")
+    id       = Column(Integer, primary_key=True, index=True)
+    user_id  = Column(Integer, ForeignKey("users.id"), index=True)
 
+    answers  = relationship(
+        "PartnerAnswer",
+        back_populates="partner",
+        cascade="all,delete-orphan",
+        lazy="selectin",
+    )
+
+class Schedule(Base):
+    __tablename__ = "schedules"
+    id             = Column(Integer, primary_key=True, index=True)
+    user_id        = Column(Integer, ForeignKey("users.id"), index=True)
+    meeting_date   = Column(Date, nullable=False)
+    meeting_time   = Column(Time, nullable=False)
+    meeting_place  = Column(String, nullable=False)
 
 class PartnerAnswer(Base):
     __tablename__ = "partner_answers"
@@ -100,6 +117,8 @@ class ChecklistItem(Base):
     __tablename__ = "checklist_items"
     id    = Column(Integer, primary_key=True, index=True)
     text  = Column(String, nullable=False)           # 예: "약속 시간, 장소 다시 확인하기"
+
+    model_config = {"from_attributes": True}
 
 class UserChecklist(Base):
     __tablename__ = "user_checklists"

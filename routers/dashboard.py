@@ -24,4 +24,5 @@ async def get_dashboard(user=Depends(get_current_user), db: AsyncSession=Depends
         ActionOut(id="coaching",   title="소개팅 실시간 코칭"),
         ActionOut(id="retrospect", title="소개팅 회고"),
     ]
+    # 
     return DashboardOut(partner=p, countdown=cd, tasks=tasks, actions=actions)

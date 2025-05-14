@@ -8,10 +8,12 @@ from models import (
     PreferenceAnswer, ValuesAnswer,
     IntroductionAnswer,
     Partner, PartnerAnswer,
-    ChecklistItem, UserChecklist
+    ChecklistItem, UserChecklist,
+    GroupInputAnswer, Schedule
 )
-from schemas import ChoiceAnswerIn, TextAnswerIn, ProfileIn  # ProfileBasicIn/ExtraIn → ProfileIn
+from schemas import ChoiceAnswerIn, ProfileIn, SubQuestionAnswerIn
 from typing import Dict, List
+from sqlalchemy.orm import selectinload
 
 # --- 유저 ---
 async def get_user_by_google_id(db: AsyncSession, google_id: str):
@@ -71,48 +73,42 @@ async def upsert_extra(
 
 # --- 설문 공통 ---
 async def upsert_answers(
-    db: AsyncSession, user_id: int,
-    answers, model_cls, is_text: bool = False
-):
+    db: AsyncSession,
+    user_id: int,
+    answers: List,
+    model_cls,
+    is_text: bool = False
+) -> int:
+    # 기존 답 삭제
     await db.execute(delete(model_cls).where(model_cls.user_id == user_id))
     objs = []
     if is_text:
-        for ans in answers:
+        for a in answers:
             objs.append(model_cls(
                 user_id=user_id,
-                question_id=ans.question_id,
-                text=ans.text
+                question_id=a.question_id,
+                text=a.text
             ))
     else:
-        for ans in answers:
-            if ans.option_id:
+        for a in answers:
+            # 이제 항상 option_ids 리스트
+            for oid in a.option_ids:
                 objs.append(model_cls(
                     user_id=user_id,
-                    question_id=ans.question_id,
-                    option_id=ans.option_id
+                    question_id=a.question_id,
+                    option_id=oid
                 ))
-            if ans.option_ids:
-                for oid in ans.option_ids:
-                    objs.append(model_cls(
-                        user_id=user_id,
-                        question_id=ans.question_id,
-                        option_id=oid
-                    ))
     db.add_all(objs)
     await db.commit()
     return len(objs)
+
 
 async def get_user_answers(
     db: AsyncSession,
     user_id: int,
     model
 ) -> Dict[int, List[str]]:
-    """
-    model 테이블에서 user_id 에 대한 question별 option_id(text) 리스트를 반환.
-    """
-    r = await db.execute(
-        select(model).where(model.user_id==user_id)
-    )
+    r = await db.execute(select(model).where(model.user_id == user_id))
     rows = r.scalars().all()
     d: Dict[int, List[str]] = {}
     for row in rows:
@@ -121,51 +117,69 @@ async def get_user_answers(
         d.setdefault(key, []).append(val)
     return d
 
+
+async def get_group_input_answers(
+    db: AsyncSession, user_id: int
+) -> Dict[int, str]:
+    r = await db.execute(
+        select(GroupInputAnswer).filter_by(user_id=user_id, question_id=34)
+    )
+    rows = r.scalars().all()
+    return {row.sub_question_id: row.text for row in rows}
+
+
+async def upsert_group_input_answers(
+    db: AsyncSession,
+    user_id: int,
+    answers: List[SubQuestionAnswerIn]
+) -> int:
+    await db.execute(
+        delete(GroupInputAnswer).filter_by(user_id=user_id, question_id=34)
+    )
+    objs = [
+        GroupInputAnswer(
+            user_id=user_id,
+            question_id=34,
+            sub_question_id=a.sub_question_id,
+            text=a.text
+        )
+        for a in answers
+    ]
+    db.add_all(objs)
+    await db.commit()
+    return len(objs)
+
 # --- 파트너 ---
 async def create_partner_with_answers(
     db: AsyncSession,
     user_id: int,
-    meeting_date: date,
-    answers: list[ChoiceAnswerIn]
+    answers: List[ChoiceAnswerIn]
 ) -> Partner:
-    partner = Partner(user_id=user_id, meeting_date=meeting_date)
+    partner = Partner(user_id=user_id)
     db.add(partner)
-    await db.flush()
+    await db.flush()  # partner.id 생성
 
-    answer_objs = [
-        PartnerAnswer(partner_id=partner.id, question_id=ans.question_id, option_id=ans.option_id)
-        for ans in answers
-    ]
-    db.add_all(answer_objs)
+    objs = []
+    for ans in answers:
+        # 단일/복수 모두 option_ids 로 처리
+        ids = ans.option_ids or ([ans.option_id] if ans.option_id else [])
+        for oid in ids:
+            objs.append(PartnerAnswer(
+                partner_id=partner.id,
+                question_id=ans.question_id,
+                option_id=oid
+            ))
+    db.add_all(objs)
     await db.commit()
     await db.refresh(partner)
     return partner
 
-async def get_latest_partner(db: AsyncSession, user_id: int) -> Partner | None:
-    r = await db.execute(
-        select(Partner)
-        .where(Partner.user_id == user_id)
-        .order_by(Partner.id.desc())
-        .limit(1)
-    )
-    return r.scalars().first()
-
-async def get_all_partners(db: AsyncSession, user_id: int) -> List[Partner]:
-    r = await db.execute(
-        select(Partner)
-        .where(Partner.user_id == user_id)
-        .order_by(Partner.id.desc())
-    )
-    return r.scalars().all()
-
-async def update_latest_partner_schedule(
+async def upsert_partner_answers(
     db: AsyncSession,
     user_id: int,
-    meeting_date: date,
-    meeting_time: time,
-    meeting_place: str
+    answers: List[ChoiceAnswerIn]
 ) -> Partner:
-    # 1) 가장 최신 파트너 가져오기
+    # 최신 파트너 조회
     r = await db.execute(
         select(Partner)
         .where(Partner.user_id == user_id)
@@ -174,51 +188,117 @@ async def update_latest_partner_schedule(
     )
     partner = r.scalars().first()
     if not partner:
-        raise ValueError("No partner found to schedule")
+        # 없으면 신규 생성
+        return await create_partner_with_answers(db, user_id, answers)
 
-    # 2) 스케줄 데이터 업데이트
-    partner.meeting_date  = meeting_date
-    partner.meeting_time  = meeting_time
-    partner.meeting_place = meeting_place
-
-    # 3) 커밋 & 리프레시
+    # 기존 답변 삭제 후 새로 삽입
+    await db.execute(
+        delete(PartnerAnswer)
+        .where(PartnerAnswer.partner_id == partner.id)
+    )
+    objs = []
+    for ans in answers:
+        ids = ans.option_ids or ([ans.option_id] if ans.option_id else [])
+        for oid in ids:
+            objs.append(PartnerAnswer(
+                partner_id=partner.id,
+                question_id=ans.question_id,
+                option_id=oid
+            ))
+    db.add_all(objs)
     await db.commit()
     await db.refresh(partner)
     return partner
+
+async def get_all_partners(
+    db: AsyncSession,
+    user_id: int
+) -> List[Partner]:
+    r = await db.execute(
+        select(Partner)
+        .where(Partner.user_id == user_id)
+        .options(selectinload(Partner.answers))
+        .order_by(Partner.id.desc())
+    )
+    return r.scalars().all()
+
+async def get_latest_partner(
+    db: AsyncSession,
+    user_id: int
+) -> Partner | None:
+    r = await db.execute(
+        select(Partner)
+        .where(Partner.user_id == user_id)
+        .options(selectinload(Partner.answers))
+        .order_by(Partner.id.desc())
+        .limit(1)
+    )
+    return r.scalars().first()
+
+async def upsert_schedule(
+    db: AsyncSession,
+    user_id: int,
+    meeting_date: date,
+    meeting_time: time,
+    meeting_place: str
+) -> Schedule:
+    # 이미 user_id로 저장된 스케줄 조회
+    r = await db.execute(
+        select(Schedule).where(Schedule.user_id == user_id)
+    )
+    sched = r.scalars().first()
+
+    if sched:
+        # 있으면 수정
+        sched.meeting_date  = meeting_date
+        sched.meeting_time  = meeting_time
+        sched.meeting_place = meeting_place
+    else:
+        # 없으면 신규 생성
+        sched = Schedule(
+            user_id=user_id,
+            meeting_date=meeting_date,
+            meeting_time=meeting_time,
+            meeting_place=meeting_place
+        )
+        db.add(sched)
+
+    await db.commit()
+    await db.refresh(sched)
+    return sched
+
+async def get_schedule_by_user(
+    db: AsyncSession,
+    user_id: int
+) -> Schedule | None:
+    r = await db.execute(
+        select(Schedule).where(Schedule.user_id == user_id)
+    )
+    return r.scalars().first()
 
 async def get_all_items(db: AsyncSession) -> List[ChecklistItem]:
     r = await db.execute(select(ChecklistItem))
     return r.scalars().all()
 
-async def get_user_checklist(
-    db: AsyncSession, user_id: int, for_date: date
-) -> List[UserChecklist]:
+async def get_user_checklist(db: AsyncSession, user_id: int) -> list[UserChecklist]:
     r = await db.execute(
-        select(UserChecklist)
-        .where(UserChecklist.user_id == user_id)
-        .where(UserChecklist.date == for_date)
+        select(UserChecklist).where(UserChecklist.user_id == user_id)
     )
     return r.scalars().all()
 
 async def upsert_user_check(
-    db: AsyncSession, user_id: int, for_date: date, item_id: int, checked: bool
+    db: AsyncSession, user_id: int, item_id: int, checked: bool
 ) -> None:
-    # 이미 존재하면 업데이트, 없으면 삽입
     r = await db.execute(
-        select(UserChecklist)
-        .where(UserChecklist.user_id == user_id)
-        .where(UserChecklist.date == for_date)
-        .where(UserChecklist.item_id == item_id)
+        select(UserChecklist).where(
+            UserChecklist.user_id == user_id,
+            UserChecklist.item_id == item_id
+        )
     )
     rec = r.scalars().first()
     if rec:
         rec.checked = checked
     else:
-        rec = UserChecklist(
-            user_id=user_id,
-            date=for_date,
-            item_id=item_id,
-            checked=checked
-        )
+        rec = UserChecklist(user_id=user_id, item_id=item_id, checked=checked)
         db.add(rec)
     await db.commit()

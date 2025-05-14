@@ -3,3 +3,6 @@ venv/
 __pycache__/
 uvicorn.log
 __init__.py
+key.json
+er_id INTEGER
+_user

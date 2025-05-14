@@ -1,6 +1,6 @@
 #schemas.py
 from pydantic import BaseModel, RootModel, Field
-from typing import List, Optional
+from typing import List, Optional, Literal
 from datetime import date, time
 
 # --- 유저 공통 스키마 ---
@@ -82,18 +82,32 @@ class OptionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SubQuestionDef(BaseModel):
+    """group_input(subQuestions) 정의"""
+    id: int
+    title: str
+    placeholder: Optional[str] = None
+    required: bool = False
+
+
 class QuestionOut(BaseModel):
     id: int
     type: str               # 'select' | 'slider' | 'multiple_choice' | 'group_input'
     title: str
-    maxChoice: Optional[int]
-    options: Optional[List[OptionOut]]
-    subQuestions: Optional[List[OptionOut]]  # group_input 용
-    minLabel: Optional[str]  # slider 용
-    maxLabel: Optional[str]
-    min: Optional[int]
-    max: Optional[int]
-    step: Optional[int]
+
+    # select / multiple_choice
+    maxChoice: Optional[int] = None
+    options: Optional[List[OptionOut]] = None
+
+    # slider
+    minLabel: Optional[str] = None
+    maxLabel: Optional[str] = None
+    min: Optional[int]      = None
+    max: Optional[int]      = None
+    step: Optional[int]     = None
+
+    # group_input
+    subQuestions: Optional[List[SubQuestionDef]] = None
 
     model_config = {"populate_by_name": True}
 
@@ -103,72 +117,108 @@ class QuestionList(RootModel[List[QuestionOut]]):
 
 
 class ChoiceAnswerIn(BaseModel):
-    question_id: int
-    option_id: Optional[str]
-    option_ids: Optional[List[str]]
+    question_id: int = Field(..., description="QUESTION_DEFINITIONS 상의 id")
+    option_id: Optional[str]   = Field(None, description="단일 선택 시")
+    option_ids: Optional[List[str]] = Field(None, description="복수 선택 시")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "question_id": 21,
+                "option_ids": ["1", "3", "5"]
+            }
+        }
 
 
 class ChoiceAnswerList(BaseModel):
     answers: List[ChoiceAnswerIn]
 
 
-class TextAnswerIn(BaseModel):
-    question_id: int
-    text: str
-
-
 class SaveResult(BaseModel):
-    status: str
-    saved_count: int
+    status: str       = Field(..., example="success")
+    saved_count: int  = Field(..., example=3)
 
-class QuestionWithAnswerOut(BaseModel):
-    id: int
-    type: str
-    title: str
-    maxChoice: Optional[int]
-    options: Optional[List[OptionOut]]
-    subQuestions: Optional[List[OptionOut]]
-    minLabel: Optional[str]
-    maxLabel: Optional[str]
-    min: Optional[int]
-    max: Optional[int]
-    step: Optional[int]
-
-    answer_id: Optional[str] = None
+class QuestionWithAnswerOut(QuestionOut):
     answer_ids: Optional[List[str]] = None
-    text: Optional[str]       = None           
+    text: Optional[str]            = None
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
     
-# --- 파트너 ---
+class SubQuestionAnswerIn(BaseModel):
+    sub_question_id: int = Field(..., ge=1, le=4, description="34번 질문 내 서브 id")
+    text: Optional[str]  = Field(None, description="입력 텍스트")
+
+    class Config:
+        json_schema_extra = {
+            "example": {"sub_question_id": 2, "text": "내 장점은 …"}
+        }
+
+
+class GroupInputAnswerList(BaseModel):
+    answers: List[SubQuestionAnswerIn]
+
+
+class SubQuestionOut(SubQuestionDef):
+    text: Optional[str] = None
+
+
+class GroupInputOut(BaseModel):
+    question_id: Literal[34] = 34
+    answers: List[SubQuestionOut]
+    
+# --- 파트너 ---    
 class NewPartnerIn(BaseModel):
-    meeting_date: date
     answers: List[ChoiceAnswerIn]
-    
-class ScheduleIn(BaseModel):
-    meeting_date: date
-    meeting_time: time
-    meeting_place: str
+
+class PartnerOut(BaseModel):
+    id: int
+    model_config = {"from_attributes": True}
 
 class PartnerAnswerOut(BaseModel):
     question_id: int
     option_id: str
-
-class PartnerOut(BaseModel):
-    id: int
-    meeting_date: date
-    meeting_time: Optional[time]
-    meeting_place: Optional[str]
-
-    model_config = {"from_attributes": True}
 
 class PartnerWithAnswersOut(PartnerOut):
     answers: List[PartnerAnswerOut]
 
 class PartnerListOut(BaseModel):
     partners: List[PartnerWithAnswersOut]
+
+class ScheduleIn(BaseModel):
+    meeting_date: Optional[date] = Field(None, example="2025-05-14")
+    meeting_time: Optional[time] = Field(None, example="09:24")
+    meeting_place: Optional[str] = Field(None, example="카페 ABC")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "meeting_date": "2025-05-14",
+                "meeting_time": "09:24",
+                "meeting_place": "카페 ABC"
+            }
+        }
+    }
+    
+class ScheduleOut(BaseModel):
+    meeting_date: Optional[date] = Field(
+        None,
+        example="2025-05-14"
+    )
+    meeting_time: Optional[time] = Field(
+        None,
+        example="09:24"
+    )
+    meeting_place: Optional[str] = Field(
+        None,
+        example="카페 ABC"
+    )
+
+    model_config = {
+        "from_attributes": True,
+        "json_encoders": {
+            time: lambda t: t.strftime("%H:%M")
+        },
+    }
 
 # --- 대시보드 ---
 class TaskOut(BaseModel):
@@ -188,22 +238,18 @@ class DashboardOut(BaseModel):
     tasks: List[TaskOut]
     actions: List[ActionOut]
 
-# 체크리스튼튼
-
-class ChecklistItemOut(BaseModel):
-    id: int
-    text: str
-    class Config:
-        from_attributes = True
+# 체크리스트
 
 class UserChecklistStatus(BaseModel):
     item_id: int
     checked: bool
 
-class DailyChecklistOut(BaseModel):
-    date: date
-    items: List[UserChecklistStatus]
-
 class ToggleChecklistIn(BaseModel):
     item_id: int
     checked: bool
+
+class ChecklistItemOut(BaseModel):
+    id: int
+    text: str
+
+    model_config = {"from_attributes": True}

@@ -4,41 +4,59 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from deps import get_current_user
 from core.database import get_session
-from crud import upsert_answers, get_user_answers
-from schemas import ChoiceAnswerList, SaveResult, TextAnswerIn, QuestionWithAnswerOut
+from crud import (
+    upsert_answers,
+    get_user_answers,
+    get_group_input_answers,
+    upsert_group_input_answers
+)
+from schemas import (
+    ChoiceAnswerList,
+    SaveResult,
+    QuestionWithAnswerOut,
+    GroupInputAnswerList,
+    GroupInputOut,
+    SubQuestionOut
+)
 from models import (
     LifestyleAnswer,
     TraitAnswer,
     PreferenceAnswer,
     ValuesAnswer,
-    IntroductionAnswer
+    IntroductionAnswer,
+    GroupInputAnswer
 )
 from constants import QUESTION_DEFINITIONS
 
 
 router = APIRouter(prefix="/survey", tags=["survey"])
 
-
+async def _load_and_merge(
+    db: AsyncSession,
+    user_id: int,
+    qmin: int,
+    qmax: int,
+    model_cls,
+    is_text: bool = False
+) -> List[QuestionWithAnswerOut]:
+    defs = [q for q in QUESTION_DEFINITIONS if qmin <= q["id"] <= qmax]
+    stored = await get_user_answers(db, user_id, model_cls)
+    out = []
+    for q in defs:
+        vals = stored.get(q["id"], [])
+        out.append(QuestionWithAnswerOut(
+            **q,
+            answer_ids=vals or None,
+            text=vals[0] if is_text and vals else None
+        ))
+    return out
 @router.get(
     "/lifestyle",
     response_model=List[QuestionWithAnswerOut],
     summary="Get Lifestyle with answers"
 )
-async def get_lifestyle(
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
-):
-    questions = [q for q in QUESTION_DEFINITIONS if 1 <= q["id"] <= 7]
-    answers = await get_user_answers(db, user.id, LifestyleAnswer)
-    out: List[QuestionWithAnswerOut] = []
-    for q in questions:
-        ans = answers.get(q["id"], [])
-        out.append(QuestionWithAnswerOut(
-            **q,
-            answer_id=ans[0] if len(ans) == 1 else None,
-            answer_ids=ans if len(ans) > 1 else None
-        ))
-    return out
+async def get_lifestyle(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    return await _load_and_merge(db, user.id, 1, 7, LifestyleAnswer)
 
 
 @router.post(
@@ -46,13 +64,9 @@ async def get_lifestyle(
     response_model=SaveResult,
     summary="Post Lifestyle"
 )
-async def post_lifestyle(
-    payload: ChoiceAnswerList,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session),
-):
-    saved = await upsert_answers(db, user.id, payload.answers, LifestyleAnswer, is_text=False)
-    return SaveResult(status="success", saved_count=saved)
+async def post_lifestyle(payload: ChoiceAnswerList, user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    cnt = await upsert_answers(db, user.id, payload.answers, LifestyleAnswer, is_text=False)
+    return SaveResult(status="success", saved_count=cnt)
 
 
 @router.get(
@@ -60,21 +74,8 @@ async def post_lifestyle(
     response_model=List[QuestionWithAnswerOut],
     summary="Get Identify with answers"
 )
-async def get_identify(
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
-):
-    questions = [q for q in QUESTION_DEFINITIONS if 8 <= q["id"] <= 20]
-    answers = await get_user_answers(db, user.id, TraitAnswer)
-    out: List[QuestionWithAnswerOut] = []
-    for q in questions:
-        ans = answers.get(q["id"], [])
-        out.append(QuestionWithAnswerOut(
-            **q,
-            answer_id=ans[0] if len(ans) == 1 else None,
-            answer_ids=ans if len(ans) > 1 else None
-        ))
-    return out
+async def get_identify(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    return await _load_and_merge(db, user.id, 8, 20, TraitAnswer)
 
 
 @router.post(
@@ -82,13 +83,9 @@ async def get_identify(
     response_model=SaveResult,
     summary="Post Identify"
 )
-async def post_identify(
-    payload: ChoiceAnswerList,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session),
-):
-    saved = await upsert_answers(db, user.id, payload.answers, TraitAnswer, is_text=False)
-    return SaveResult(status="success", saved_count=saved)
+async def post_identify(payload: ChoiceAnswerList, user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    cnt = await upsert_answers(db, user.id, payload.answers, TraitAnswer, is_text=False)
+    return SaveResult(status="success", saved_count=cnt)
 
 
 @router.get(
@@ -96,21 +93,8 @@ async def post_identify(
     response_model=List[QuestionWithAnswerOut],
     summary="Get Preference with answers"
 )
-async def get_preference(
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
-):
-    questions = [q for q in QUESTION_DEFINITIONS if 21 <= q["id"] <= 27]
-    answers = await get_user_answers(db, user.id, PreferenceAnswer)
-    out: List[QuestionWithAnswerOut] = []
-    for q in questions:
-        ans = answers.get(q["id"], [])
-        out.append(QuestionWithAnswerOut(
-            **q,
-            answer_id=ans[0] if len(ans) == 1 else None,
-            answer_ids=ans if len(ans) > 1 else None
-        ))
-    return out
+async def get_preference(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    return await _load_and_merge(db, user.id, 21, 27, PreferenceAnswer)
 
 
 @router.post(
@@ -118,13 +102,9 @@ async def get_preference(
     response_model=SaveResult,
     summary="Post Preference"
 )
-async def post_preference(
-    payload: ChoiceAnswerList,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session),
-):
-    saved = await upsert_answers(db, user.id, payload.answers, PreferenceAnswer, is_text=False)
-    return SaveResult(status="success", saved_count=saved)
+async def post_preference(payload: ChoiceAnswerList, user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    cnt = await upsert_answers(db, user.id, payload.answers, PreferenceAnswer, is_text=False)
+    return SaveResult(status="success", saved_count=cnt)
 
 
 @router.get(
@@ -132,21 +112,8 @@ async def post_preference(
     response_model=List[QuestionWithAnswerOut],
     summary="Get Beliefs with answers"
 )
-async def get_beliefs(
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
-):
-    questions = [q for q in QUESTION_DEFINITIONS if 28 <= q["id"] <= 33]
-    answers = await get_user_answers(db, user.id, ValuesAnswer)
-    out: List[QuestionWithAnswerOut] = []
-    for q in questions:
-        ans = answers.get(q["id"], [])
-        out.append(QuestionWithAnswerOut(
-            **q,
-            answer_id=ans[0] if len(ans) == 1 else None,
-            answer_ids=ans if len(ans) > 1 else None
-        ))
-    return out
+async def get_beliefs(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    return await _load_and_merge(db, user.id, 28, 33, ValuesAnswer)
 
 
 @router.post(
@@ -154,25 +121,31 @@ async def get_beliefs(
     response_model=SaveResult,
     summary="Post Beliefs"
 )
-async def post_beliefs(
-    payload: ChoiceAnswerList,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session),
-):
-    saved = await upsert_answers(db, user.id, payload.answers, ValuesAnswer, is_text=False)
-    return SaveResult(status="success", saved_count=saved)
+async def post_beliefs(payload: ChoiceAnswerList, user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    cnt = await upsert_answers(db, user.id, payload.answers, ValuesAnswer, is_text=False)
+    return SaveResult(status="success", saved_count=cnt)
+@router.get(
+    "/essay",
+    response_model=GroupInputOut,
+    summary="Get Essay(group_input) with answers"
+)
+async def get_group_input(user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    q34 = next(q for q in QUESTION_DEFINITIONS if q["id"] == 34)
+    stored = await get_group_input_answers(db, user.id)
+    return GroupInputOut(
+        answers=[
+            { **sub, "text": stored.get(sub["id"]) }
+            for sub in q34["subQuestions"]
+        ]
+    )
 
 
 @router.post(
     "/essay",
     response_model=SaveResult,
     status_code=status.HTTP_201_CREATED,
-    summary="Post Essay"
+    summary="Post Essay(group_input) answers"
 )
-async def post_essay(
-    payload: TextAnswerIn,
-    user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_session),
-):
-    saved = await upsert_answers(db, user.id, [payload], IntroductionAnswer, is_text=True)
-    return SaveResult(status="success", saved_count=saved)
+async def post_group_input(payload: GroupInputAnswerList, user=Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    cnt = await upsert_group_input_answers(db, user.id, payload.answers)
+    return SaveResult(status="success", saved_count=cnt)

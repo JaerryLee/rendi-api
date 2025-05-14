@@ -25,9 +25,8 @@ oauth.register(
 
 # 프론트엔드 URL 설정
 FRONTEND = str(settings.FRONTEND_URL).rstrip("/")
-IS_PROD = FRONTEND.startswith("https://")
-COOKIE_SECURE = IS_PROD
-COOKIE_SAMESITE = "none" if IS_PROD else "lax"
+COOKIE_SECURE = True
+COOKIE_SAMESITE = "none"
 
 
 @router.get(
@@ -83,14 +82,18 @@ async def callback(request: Request, db=Depends(get_session)):
         access_jwt,
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE
+        samesite=COOKIE_SAMESITE,
+        domain=".rendi.online",
+        path="/"
     )
     response.set_cookie(
         "refresh_token",
         refresh_jwt,
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE
+        samesite=COOKIE_SAMESITE,
+        domain=".rendi.online",
+        path="/"
     )
     return response
 

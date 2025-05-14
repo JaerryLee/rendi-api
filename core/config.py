@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     DATABASE_URL: AnyUrl
 
     FRONTEND_URL: str
-    
+    GOOGLE_APPLICATION_CREDENTIALS: str
     class Config:
         env_file = ".env"
 
