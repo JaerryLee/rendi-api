@@ -7,3 +7,5 @@ key.json
 er_id INTEGER
 _user
 nohup.out
+proto/
+clovaspeech/

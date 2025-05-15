@@ -16,7 +16,15 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: str
     GOOGLE_APPLICATION_CREDENTIALS: str
+    
+    CLOVA_CLIENT_ID: str
+    CLOVA_CLIENT_SECRET: str
+
+    CLOVA_DOMAIN_CODE: str
+
+    CLOVA_GRPC_URL: str
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
 
 settings = Settings()

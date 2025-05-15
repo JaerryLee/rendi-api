@@ -6,3 +6,6 @@ nohup uvicorn main:app \
   > uvicorn.log 2>&1 &
 
 ps aux | grep uvicorn
+
+sudo vim /etc/nginx/sites-enabled/fastapi
+UPLOAD_DIR = "/mnt/disk-rendi/uploads"
