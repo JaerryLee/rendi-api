@@ -19,8 +19,15 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.openapi.utils import get_openapi
 from jose import jwt
 
-from clovaspeech.nest_pb2 import NestRequest, NestConfig, NestData, RequestType
-from clovaspeech.nest_pb2_grpc import NestServiceStub
+from azure.cognitiveservices.speech import (
+    SpeechConfig,
+    SpeechRecognizer,
+    AudioConfig,
+    PropertyId
+)
+from azure.cognitiveservices.speech.transcription import ConversationTranscriber
+from azure.cognitiveservices.speech.audio import PushAudioInputStream
+import azure.cognitiveservices.speech as speechsdk
 
 from core.config import settings
 from core.database import engine, Base
@@ -29,6 +36,22 @@ from routers import auth, profile, survey, partner, checklist, schedules
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Azure SpeechConfig
+speech_config = SpeechConfig(
+    subscription=settings.AZURE_SPEECH_KEY,
+    endpoint=str(settings.AZURE_SPEECH_ENDPOINT)
+)
+speech_config.speech_recognition_language = "ko-KR"
+
+speech_config.set_property(
+    PropertyId.SpeechServiceResponse_DiarizeIntermediateResults,
+    "true"
+)
+speech_config.set_service_property(
+    "Speech_SegmentationSilenceTimeoutMs",
+    "500",
+    speechsdk.ServicePropertyChannel.UriQueryParameter
+)
 app = FastAPI(
     title="Rendi API",
     version="1.0",
@@ -72,90 +95,56 @@ async def on_startup():
 @app.websocket("/ws/speech")
 async def speech_ws(websocket: WebSocket):
     await websocket.accept()
-    
-    token = websocket.cookies.get("access_token")
-    if not token:
-        await websocket.close(code=4401)
-        
-    channel = grpc.aio.secure_channel(
-        settings.CLOVA_GRPC_URL,
-        grpc.ssl_channel_credentials(),
-    )
-    stub = NestServiceStub(channel)
-    
-    cfg = {"transcription": {"language": "ko"}}
-    cfg_msg = NestConfig(config=json.dumps(cfg))
+    loop = asyncio.get_running_loop()
 
-    # 5) asyncio.Queue 로 오디오 청크 관리
-    audio_q: asyncio.Queue[bytes] = asyncio.Queue()
+    # 1) 스트림 및 Transcriber 생성
+    push_stream = PushAudioInputStream()
+    audio_input = AudioConfig(stream=push_stream)
+    transcriber = ConversationTranscriber(speech_config, audio_input)
 
-    # 6) 요청 메시지 생성기
-    async def request_generator():
-        # 1) CONFIG 메시지
-        yield NestRequest(
-            type=RequestType.CONFIG,
-            config=cfg_msg
-        )
+    # 2) 이벤트 콜백 등록
+    def on_transcribing(evt):
+        loop.create_task(websocket.send_json({
+            "text": evt.result.text,
+            "is_final": False,
+            "speaker_id": evt.result.speaker_id,
+            "timestamp": datetime.utcnow().isoformat()
+        }))
 
-        # 2) AUDIO DATA 메시지
-        while True:
-            chunk = await audio_q.get()
-            if chunk is None:
-                break
-            # extra_contents에 seqId, epFlag 포함
-            extra = {"seqId": 0, "epFlag": False}
-            yield NestRequest(
-                type=RequestType.DATA,
-                data=NestData(
-                    chunk=chunk,
-                    extra_contents=json.dumps(extra)
-                )
-            )
+    def on_transcribed(evt):
+        loop.create_task(websocket.send_json({
+            "text": evt.result.text,
+            "is_final": True,
+            "speaker_id": evt.result.speaker_id,
+            "timestamp": datetime.utcnow().isoformat()
+        }))
 
-    # 7) gRPC streaming → WebSocket 전송
-    async def grpc_stream():
-        try:
-            responses = stub.recognize(
-                request_generator(),
-                metadata=(("authorization", f"Bearer {settings.CLOVA_CLIENT_SECRET}"),),
-            )
-            async for resp in responses:
-                # resp.contents 에는 문자열 텍스트
-                await websocket.send_json({
-                    "text": resp.contents,
-                    "timestamp": datetime.utcnow().isoformat()
-                })
-        except grpc.aio.AioRpcError as e:
-            logger.error("gRPC 스트리밍 중 오류", exc_info=e)
-        finally:
-            await channel.close()
-            try:
-                await websocket.close()
-            except:
-                pass
+    transcriber.transcribing.connect(on_transcribing)
+    transcriber.transcribed.connect(on_transcribed)
 
-    # 8) Task 시작 및 WebSocket→Queue
-    grpc_task = asyncio.create_task(grpc_stream())
+    # 3) 스트리밍 시작
+    transcriber.start_transcribing_async()
+
     try:
+        # 4) WebSocket → PushStream
         while True:
-            try:
-                # WebSocket이 살아 있는 동안에만 bytes를 받음
-                data = await websocket.receive_bytes()
-            except (WebSocketDisconnect, RuntimeError):
-                # 클라이언트가 끊겼거나 이미 닫힌 소켓에 접근했을 때
-                break
+            chunk = await websocket.receive_bytes()
+            push_stream.write(chunk)
 
-            # 정상적으로 data를 받았을 때만 큐에 넣음
-            await audio_q.put(data)
+    except WebSocketDisconnect:
+        # 클라이언트가 stop 버튼을 누르거나 연결이 끊긴 경우
+        logger.info("WebSocket disconnected by client")
+        pass
 
     finally:
-        # gRPC 스트림에 “종료” 신호 보냄
-        await audio_q.put(None)
-        # gRPC 태스크 취소 및 채널 닫기
-        grpc_task.cancel()
-        with contextlib.suppress(Exception):
-            await channel.close()
-
+        # 5) 자원 정리 (한 번만)
+        push_stream.close()
+        transcriber.stop_transcribing_async()
+        try:
+            await websocket.close()
+        except RuntimeError:
+            # 이미 닫혔을 수 있으니 무시
+            pass
 
 # 나머지 라우터 포함
 app.include_router(auth.router)

@@ -81,17 +81,13 @@
       ws.binaryType = 'arraybuffer';
       ws.onopen = () => { setStatus('🟢 Connected'); startBtn.disabled = true; stopBtn.disabled = false; };
       ws.onmessage = ev => {
-        let msg;
-        try {
-          msg = JSON.parse(ev.data);
-        } catch {
-          appendJSON({ error: 'invalid JSON', raw: ev.data });
-          return;
-        }
+        const msg = JSON.parse(ev.data);
+        const div = document.createElement('div');
+        div.textContent = `[${msg.speaker_id}] ${msg.text}`;
+        div.className = msg.is_final ? 'final' : 'interim';
+        logEl.appendChild(div);
+        logEl.scrollTop = logEl.scrollHeight;
         appendJSON(msg);
-        if (msg.text !== undefined && msg.is_final !== undefined) {
-          appendLog(msg.text, msg.is_final);
-        }
       };
       ws.onerror = () => setStatus('❌ WebSocket Error', 'error');
       ws.onclose = () => { setStatus('🚫 Disconnected'); startBtn.disabled = false; stopBtn.disabled = true; };

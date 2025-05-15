@@ -17,12 +17,10 @@ class Settings(BaseSettings):
     FRONTEND_URL: str
     GOOGLE_APPLICATION_CREDENTIALS: str
     
-    CLOVA_CLIENT_ID: str
-    CLOVA_CLIENT_SECRET: str
+    AZURE_SPEECH_KEY: str
+    AZURE_SPEECH_REGION: str
+    AZURE_SPEECH_ENDPOINT: AnyUrl
 
-    CLOVA_DOMAIN_CODE: str
-
-    CLOVA_GRPC_URL: str
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
