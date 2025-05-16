@@ -125,14 +125,14 @@ async def speech_ws(
         transcriber.stop_transcribing_async()
         with contextlib.suppress(RuntimeError):
             await websocket.close()
-'''
+
 async def safe_send(ws: WebSocket, data: dict):
     try:
         await ws.send_json(data)
     except RuntimeError:
         # 이미 close된 상태라면 무시
         logging.info("WebSocket already closed; cannot send message.")
-'''        
+      
 async def handle_ai_pipeline(
     ws: WebSocket,
     payload: dict,
@@ -175,7 +175,7 @@ async def handle_ai_pipeline(
             rec.raise_for_status()
             advice_list = rec.json().get('advice_metadatas', [])
             envelope['advice_metadatas'] = advice_list
-
+            '''
             # 6) 조언 상세
             if advice_list:
                 aid = advice_list[0]['advice_id']
@@ -184,7 +184,16 @@ async def handle_ai_pipeline(
                 )
                 det.raise_for_status()
                 envelope['advice_detail'] = det.json()
-
+            '''
+            advice_details = []
+            for advice in advice_list:
+                aid = advice.get('advice_id')
+                det = await client.post(
+                    f"{base}/api/v1/conversation/{conv_id}/breaktime-advice/{aid}"
+                )
+                det.raise_for_status()
+                advice_details.append(det.json())
+            envelope['advice_details'] = advice_details
             # 7) 최종 보고서
             fin = await client.post(
                 f"{base}/api/v1/conversation/{conv_id}/final-report", json={}
@@ -195,10 +204,10 @@ async def handle_ai_pipeline(
         logger.error("AI pipeline error: %s", e)
         await ws.send_json({"error": str(e)})
         return
-    # envelope['message'] = payload['message']
-    # await safe_send(ws, envelope)
     envelope['message'] = payload['message']
-    await ws.send_json(envelope)
+    await safe_send(ws, envelope)
+    # envelope['message'] = payload['message']
+    # await ws.send_json(envelope)
 
 # 라우터
 app.include_router(auth.router)
