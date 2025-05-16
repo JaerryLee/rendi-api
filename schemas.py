@@ -1,7 +1,7 @@
 from pydantic import BaseModel, RootModel, Field
-from typing import List, Optional, Literal
+from typing import Any, List, Optional, Literal, Dict
 from datetime import date, time
-
+from uuid import UUID
 # --- 유저 공통 스키마 ---
 class UserOut(BaseModel):
     id: int
@@ -252,3 +252,45 @@ class ChecklistItemOut(BaseModel):
     text: str
 
     model_config = {"from_attributes": True}
+
+class ConversationCreate(BaseModel):
+    """POST /api/v1/conversation"""
+    pass
+
+class MessageIn(BaseModel):
+    """POST /api/v1/conversation/{id}/messages 요청 바디"""
+    message: Dict[str, Any]
+
+class ConversationOut(BaseModel):
+    """전체 AI 응답 Envelope"""
+    message: Dict[str, Any]
+    scores: Dict[str, Any]            = Field(default_factory=dict)
+    partner_memory: Any               = Field(default_factory=dict)
+    analysis: Any                     = Field(default_factory=dict)
+    advice: List[Any]                 = Field(default_factory=list)
+    advice_metadatas: Any             = Field(default_factory=dict)
+    final_report: str                 = Field(default="")
+
+class RealTimeMemoryIn(BaseModel):
+    """POST /api/v1/conversation/{id}/realtime-memory 요청 바디"""
+    extra_context: Dict[str, Any] = Field(default_factory=dict)
+
+class RealTimeAnalysisOut(BaseModel):
+    """GET /api/v1/conversation/{id}/realtime-analysis 응답"""
+    analysis: Dict[str, Any] = Field(default_factory=dict)
+
+class BreaktimeRecommendationIn(BaseModel):
+    """POST /api/v1/conversation/{id}/breaktime-advice/recommendation 요청 바디"""
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+
+class BreaktimeRecommendationOut(BaseModel):
+    """추천된 휴식 조언 리스트 반환"""
+    advice_metadatas: List[Dict[str, Any]] = Field(default_factory=list)
+
+class FinalReportIn(BaseModel):
+    """POST /api/v1/conversation/{id}/final-report 요청 바디"""
+    summary_options: Dict[str, Any] = Field(default_factory=dict)
+
+class FinalReportOut(BaseModel):
+    """최종 보고서 반환"""
+    final_report: str

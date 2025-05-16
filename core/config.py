@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     AZURE_SPEECH_REGION: str
     AZURE_SPEECH_ENDPOINT: AnyUrl
 
+    AI_SERVER_URL: str
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

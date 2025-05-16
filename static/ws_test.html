@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Clova Speech STT 테스트</title>
+  <title>Clova Speech STT + AI Pipeline 테스트</title>
   <style>
     body { font-family: Arial; padding: 2rem; background: #fafafa; }
     h1 { color: #333; }
@@ -25,25 +25,24 @@
   </style>
 </head>
 <body>
-  <h1>Clova Speech STT 테스트 페이지</h1>
+  <h1>Clova Speech STT + AI Pipeline 테스트</h1>
   <button id="startBtn">Start Streaming</button>
   <button id="stopBtn" disabled>Stop Streaming</button>
   <div id="status">Status: 🚫 Not connected</div>
 
-  <h2>Transcripts</h2>
+  <h2>Combined Transcripts & AI Response</h2>
   <div id="log"></div>
 
-  <h2>Raw JSON</h2>
+  <h2>Raw JSON from Backend</h2>
   <div id="json"></div>
 
   <script>
-    const WS_URL       = 'wss://api.rendi.online/ws/speech'; // ← 여러분의 도메인
-    const SAMPLE_RATE  = 16000;
-    const FRAME_MS     = 20;
-    const FRAME_SAMPLES= SAMPLE_RATE * FRAME_MS / 1000; // 320 samples
+    const WS_URL        = 'wss://api.rendi.online/ws/speech';
+    const SAMPLE_RATE   = 16000;
+    const FRAME_MS      = 20;
+    const FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS / 1000; // 320 samples
 
     let audioCtx, workletNode, ws, stream;
-
     const statusEl = document.getElementById('status');
     const logEl    = document.getElementById('log');
     const jsonEl   = document.getElementById('json');
@@ -55,42 +54,50 @@
       statusEl.className = cls || '';
     }
 
-    function appendLog(text, isFinal) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      div.className = isFinal ? 'final' : 'interim';
-      logEl.appendChild(div);
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    function appendJSON(obj) {
-      const pre = document.createElement('pre');
-      pre.textContent = JSON.stringify(obj, null, 2);
-      jsonEl.appendChild(pre);
-      jsonEl.scrollTop = jsonEl.scrollHeight;
-    }
-
     startBtn.onclick = async () => {
-      // 초기화
-      logEl.innerHTML = '';
+      logEl.innerHTML  = '';
       jsonEl.innerHTML = '';
       setStatus('connecting…');
 
-      // 1) WebSocket 열기
+      // 1) WebSocket open
       ws = new WebSocket(WS_URL);
       ws.binaryType = 'arraybuffer';
-      ws.onopen = () => { setStatus('🟢 Connected'); startBtn.disabled = true; stopBtn.disabled = false; };
+
+      ws.onopen = () => {
+        setStatus('🟢 Connected');
+        startBtn.disabled = true;
+        stopBtn.disabled  = false;
+      };
+
       ws.onmessage = ev => {
         const msg = JSON.parse(ev.data);
+
+        // Combined log: 발화 + AI 응답 정보를 한 번에 표시
         const div = document.createElement('div');
-        div.textContent = `[${msg.speaker_id}] ${msg.text}`;
-        div.className = msg.is_final ? 'final' : 'interim';
+        div.className = 'final';
+        div.innerHTML = `
+          <strong>[${msg.message.role}] ${msg.message.content}</strong><br/>
+          scores: ${JSON.stringify(msg.scores)}<br/>
+          memory: ${JSON.stringify(msg.partner_memory)}<br/>
+          analysis: ${JSON.stringify(msg.analysis)}<br/>
+          advice: ${JSON.stringify(msg.advice_metadatas)}
+        `;
         logEl.appendChild(div);
         logEl.scrollTop = logEl.scrollHeight;
-        appendJSON(msg);
+
+        // Raw JSON
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(msg, null, 2);
+        jsonEl.appendChild(pre);
+        jsonEl.scrollTop = jsonEl.scrollHeight;
       };
+
       ws.onerror = () => setStatus('❌ WebSocket Error', 'error');
-      ws.onclose = () => { setStatus('🚫 Disconnected'); startBtn.disabled = false; stopBtn.disabled = true; };
+      ws.onclose = () => {
+        setStatus('🚫 Disconnected');
+        startBtn.disabled = false;
+        stopBtn.disabled  = true;
+      };
 
       // 2) 마이크 권한 요청 & AudioWorklet 준비
       try {
@@ -108,11 +115,10 @@
           }
           process(inputs) {
             const in0 = inputs[0][0];
-            if (in0) {
-              this.buf.push(...in0);
-              while (this.buf.length >= ${FRAME_SAMPLES}) {
-                this.port.postMessage(this.buf.splice(0, ${FRAME_SAMPLES}));
-              }
+            if (!in0) return true;
+            this.buf.push(...in0);
+            while (this.buf.length >= ${FRAME_SAMPLES}) {
+              this.port.postMessage(this.buf.splice(0, ${FRAME_SAMPLES}));
             }
             return true;
           }
@@ -120,12 +126,12 @@
         registerProcessor('pcm-processor', PCMProcessor);
       `], { type: 'application/javascript' })));
 
-      // 3) 워크릿 노드 → WebSocket 전송
+      // 3) WorkletNode → WebSocket 전송
       workletNode = new AudioWorkletNode(audioCtx, 'pcm-processor');
       workletNode.port.onmessage = e => {
         if (ws.readyState === WebSocket.OPEN) {
           const float32 = e.data;
-          const pcm16 = new Int16Array(float32.length);
+          const pcm16   = new Int16Array(float32.length);
           for (let i = 0; i < float32.length; i++) {
             const s = Math.max(-1, Math.min(1, float32[i]));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
@@ -134,7 +140,7 @@
         }
       };
 
-      // 4) 오디오 라우팅
+      // 4) Audio routing
       const src = audioCtx.createMediaStreamSource(stream);
       src.connect(workletNode).connect(audioCtx.destination);
     };
